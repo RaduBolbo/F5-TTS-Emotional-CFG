@@ -3,7 +3,8 @@
 tests/
 runs/
 data/
-ckpts/
+ckpts/*.pt
+ckpts/*.pth
 wandb/
 results/
 dataset/
