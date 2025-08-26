@@ -2,7 +2,7 @@
 .vscode/
 tests/
 runs/
-data/
+dataset/
 ckpts/*.pt
 ckpts/*.pth
 wandb/
