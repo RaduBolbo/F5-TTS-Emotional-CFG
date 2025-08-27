@@ -69,7 +69,7 @@ Use the CLI interface defiend in `src/f5_tts/infer/infer_cli_emotion.py`:
 
 - --ref-text: Transcription of the reference audio (the text that is being said).
 
-- --ref-emotion: The emotion in the reference audio clip (in most practical cases it can work with `Neutral` as default)
+- --ref-emotion: The emotion in the reference audio clip (if you don't know the reference emotion, in most practical cases it can work with `Neutral` as default, but sometimes it can cause lower voice similarity)
 
 - --inference-text: The new text you want the model to synthesize.
 
