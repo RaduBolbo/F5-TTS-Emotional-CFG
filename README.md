@@ -21,6 +21,7 @@ The official BibTeX entry will be added here once the paper is published in IEEE
 
 Cite the paper as:
 
+```bibtex
   @inproceedings{bolborici2025emotion,
     author    = {Radu-George Bolborici and Ana Antonia Nicolae},
     title     = {Adding Emotion Conditioning in Speech Synthesis via Multi-Term Classifier-Free Guidance},
@@ -29,6 +30,7 @@ Cite the paper as:
     address   = {Cluj-Napoca, Romania},
     note      = {Presented at SPED 2025. Pending indexing in IEEE Xplore.}
   }
+```
 
 
 ## 🚀 Demo
