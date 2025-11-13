@@ -4,7 +4,7 @@
 
 # F5-TTS-Emotion-CFG
 
-This repository is based on [**F5-TTS**](https://github.com/SWivid/F5-TTS?tab=readme-ov-file#f5-tts-a-fairytaler-that-fakes-fluent-and-faithful-speech-with-flow-matching): A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching from [paper](https://arxiv.org/abs/2410.06885).
+This repository is based on [**F5-TTS**](https://github.com/SWivid/F5-TTS?tab=readme-ov-file#f5-tts-a-fairytaler-that-fakes-fluent-and-faithful-speech-with-flow-matching): A Fairytaler that Fakes Fluent and Faithful Speech with Flow Matching
 
 F5-TTS-Emotion-CFG introudces explicit emotion conditioning in F5-TTS zero-shot voice cloning model, by fine-tuning on [ESD](https://arxiv.org/abs/2010.14794) dataset.
 
