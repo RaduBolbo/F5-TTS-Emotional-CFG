@@ -17,7 +17,8 @@ has been accepted at **SpeD 2025**.
 
 The official BibTeX entry will be added here once the paper is published in IEEE Xplore.  
 
-[![Read Paper](https://ieeexplore.ieee.org/document/11253714)]
+[[![Read Paper](https://ieeexplore.ieee.org/document/11253714)]
+](https://ieeexplore.ieee.org/document/11253714)
 
 Cite the paper as:
 
