@@ -17,6 +17,9 @@ has been presented at **SpeD 2025**.
 
 [![Read Paper](https://img.shields.io/badge/Read_Paper-IEEE_Xplore-00629B?style=for-the-badge)](https://ieeexplore.ieee.org/document/11253714)
 
+[![Read Paper](https://img.shields.io/badge/Read_Paper-ResearchGate-00CCBB?style=for-the-badge)](https://www.researchgate.net/publication/398022280_Adding_Emotion_Conditioning_in_Speech_Synthesis_via_Multi-Term_Classifier-Free_Guidance)
+
+
 Cite the paper as:
 
 ```bibtex
