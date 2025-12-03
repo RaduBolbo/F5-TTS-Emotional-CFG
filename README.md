@@ -13,7 +13,7 @@ The following emotions are supported: Neutral, Happy, Sad, Angry and Surprised.
 ## 📄 Paper & Citation
 
 Our paper *“Adding Emotion Conditioning in Speech Synthesis via Multi-Term Classifier-Free Guidance”*  
-has been accepted at **SpeD 2025**.  
+has been presented at **SpeD 2025**.  
 
 The official BibTeX entry will be added here once the paper is published in IEEE Xplore.  
 
