@@ -26,9 +26,9 @@ Cite the paper as:
     author       = {Radu-George Bolborici and Ana Antonia Nicolae},
     title        = {Adding Emotion Conditioning in Speech Synthesis via Multi-Term Classifier-Free Guidance},
     booktitle    = {2025 International Conference on Speech Technology and Human-Computer Dialogue (SpeD)},
-    year         = {2025},
-    organization = {IEEE},
-    note         = {Presented at SPED 2025. Pending indexing in IEEE Xplore.}
+    pages        = {86--91},
+    doi          = {10.1109/SpeD67700.2025.11253714},
+    publisher    = {IEEE}
   }
 ```
 
