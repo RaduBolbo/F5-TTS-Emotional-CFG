@@ -209,3 +209,4 @@ dependencies:
       - x-transformers==1.42.24
       - xxhash==3.5.0
       - yarl==1.18.3
+      - modelscope==1.33.0

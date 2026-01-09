@@ -59,7 +59,11 @@ Execute the script:
 
     python download_models.py
 
-Or download the models from [🤗 Hugging Face](https://huggingface.co/RaduBolbo/F5-TTS-Emotion-CFG-1/tree/main) and coppy them in the `ckpts` directory.
+Alternatively, you can manually download the models from:
+- [🤗 Hugging Face](https://huggingface.co/RaduBolbo/F5-TTS-Emotion-CFG-1/tree/main)
+- [🌏 ModelScope](https://www.modelscope.ai/models/RaduBolbo/F5-TTS-Emotion-CFG-1/files)
+
+and copy them into the `ckpts` directory.
 
 ## How to use (inference)
 
