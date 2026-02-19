@@ -83,12 +83,8 @@ Use the CLI interface defiend in `src/f5_tts/infer/infer_cli_emotion.py`:
 - --ref-audio-path: Path to the reference audio file for voice cloning. Provides the speaker’s voice.
 
 - --ref-text: Transcription of the reference audio (the text that is being said).
-    ⚠️ Important – Reference Text Formatting
-
-  The reference text must end with a punctuation mark (. , ! , or ? ).
-  If it does not, the generation process may become unstable.
-
-  This limitation will be handled automatically in a future update.
+  
+    ⚠️ Important – The reference text must end with a punctuation mark (. , ! , or ? ). If it does not, the generation process may become unstable. This limitation will be handled automatically in a future update.
 
 - --ref-emotion: The emotion in the reference audio clip (if you don't know the reference emotion, in most practical cases it can work with `Neutral` as default, but sometimes it can cause lower voice similarity)
 
