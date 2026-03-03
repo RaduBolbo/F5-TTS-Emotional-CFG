@@ -95,3 +95,23 @@ Use the CLI interface defiend in `src/f5_tts/infer/infer_cli_emotion.py`:
 - --cfg-strength2: Classifier-free guidance strength for emotion control. Higher = stronger emotion, but too high may reduce naturalness. Typical values range from 2 up to 20.
 
 - --output-path: Path where the generated audio will be saved.
+
+
+
+## 🔮 Roadmap & Future Work
+
+The following improvements and extensions are planned:
+
+- 🗣️ **Improved Voice Cloning Robustness**  
+  Better speaker similarity preservation under emotion guidance.
+
+- 📈 **Training Guide & Best Practices**  
+  A detailed guide covering dataset preparation, hyperparameter selection, how to run the script and common some tips.
+
+- 🌐 **WebUI (Gradio) Interface**  
+  An graphical interface for easier experimentation, in addition to the current CLI support.
+
+
+
+
+
