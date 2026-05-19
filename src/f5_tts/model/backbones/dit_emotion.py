@@ -12,7 +12,6 @@ from __future__ import annotations
 import torch
 from torch import nn
 import torch.nn.functional as F
-#import torchshow as ts
 
 from x_transformers.x_transformers import RotaryEmbedding
 
@@ -24,51 +23,8 @@ from f5_tts.model.modules import (
     AdaLayerNormZero_Final,
     precompute_freqs_cis,
     get_pos_embed_indices,
+    EmotionFiLM,
 )
-
-import os
-import torch
-from torch.utils.tensorboard import SummaryWriter
-
-writer = SummaryWriter(log_dir="ckpts/runs/emotion_embeddings")
-
-EMBEDDINGS_FILE = "ckpts/emotion_embeddings.pt"
-
-def get_iteration():
-    return int(os.environ.get("ITERATION_COUNT", "0"))
-
-def increment_iteration():
-    os.environ["ITERATION_COUNT"] = str(get_iteration() + 1)
-
-def get_emotion_embeddings():
-    if os.path.exists(EMBEDDINGS_FILE):
-        return torch.load(EMBEDDINGS_FILE)
-    return []
-
-def save_emotion_embeddings(embeddings):
-    torch.save(embeddings, EMBEDDINGS_FILE)
-
-def register_emotion_embedding(emotion_embed):
-    embeddings = get_emotion_embeddings()
-
-    # Clone and move to CPU
-    cloned_embedding = emotion_embed.clone().detach().cpu()
-
-    embeddings.append(cloned_embedding)
-
-    # Store up to 100 embeddings
-    # if len(embeddings) < 100:
-    #     embeddings.append(cloned_embedding)
-    # else:
-    #     embeddings.pop(0)  # Remove the oldest embedding
-    #     embeddings.append(cloned_embedding)
-
-    save_emotion_embeddings(embeddings)
-
-    if len(embeddings) == 200:
-        stacked_embeddings = torch.stack(embeddings) 
-        writer.add_embedding(stacked_embeddings, global_step=get_iteration(), tag="Emotion Embeddings")
-        print(f"Logged {len(embeddings)} emotion embeddings at iteration {get_iteration()}")
 
 # Text embedding
 class TextEmbedding(nn.Module):
@@ -134,10 +90,9 @@ class TextEmbedding(nn.Module):
 
 # V2) New emotion encoding
 class EmotionEmbedding(nn.Module):
-    def __init__(self, emotion_num_embeds, emotion_dim, conv_layers=0, conv_mult=2, visualize_emotion_embeddings=False):
+    def __init__(self, emotion_num_embeds, emotion_dim, conv_layers=0, conv_mult=2):
         super().__init__()
         self.emotion_embeder = nn.Embedding(emotion_num_embeds + 1, emotion_dim)  # use 0 as filler token
-        self.visualize_emotion_embeddings = visualize_emotion_embeddings
 
         if conv_layers > 0:
             self.extra_modeling = True
@@ -150,25 +105,15 @@ class EmotionEmbedding(nn.Module):
             self.extra_modeling = False
 
     def forward(self, emotion: int["b nt"], seq_len, drop_emotion=False):  # noqa: F722
-        emotion = emotion + 1  # use 0 as filler token. preprocess of batch pad -1, see list_str_to_idx() 
-        emotion = emotion[:, :seq_len]  # Truncate if text tokens exceed mel spec length (rare case, but included for safety)
+        emotion = emotion + 1  # use 0 as filler token. preprocess of batch pad -1, see list_str_to_idx()
+        emotion = emotion[:, :seq_len]  # Truncate if tokens exceed mel spec length
         batch, emotion_len = emotion.shape[0], emotion.shape[1]
-        emotion = F.pad(emotion, (0, seq_len - emotion_len), value=0) # padd to match the cond (melspec) along seq_len.
+        emotion = F.pad(emotion, (0, seq_len - emotion_len), value=0)
 
         if drop_emotion:  # cfg for emotion
             emotion = torch.zeros_like(emotion)
 
-        emotion = self.emotion_embeder(emotion)  # b n -> b n d # every token has an embedding, but the last ones will have the 0 filler embeddign from the padding
-
-        if self.visualize_emotion_embeddings:
-            increment_iteration()
-            it = get_iteration()
-            print('iteration: ', it)
-            if it > 0:
-                register_emotion_embedding(emotion[0, 0, :])
-
-            if it > 800:
-                writer.flush()
+        emotion = self.emotion_embeder(emotion)  # b n -> b n d
 
         # possible extra modeling
         if self.extra_modeling:
@@ -185,26 +130,9 @@ class EmotionEmbedding(nn.Module):
 
 
 
-# noised input audio and context mixing embedding
+# noised input audio and context mixing embedding (with emotion)
 
-# V1)
-# The old InputEmbedding that has no emotion (🧊)
-# class InputEmbedding(nn.Module):
-#     def __init__(self, mel_dim, text_dim, emotion_dim, out_dim):
-#         super().__init__()
-#         self.proj = nn.Linear(mel_dim * 2 + text_dim, out_dim)
-#         self.conv_pos_embed = ConvPositionEmbedding(dim=out_dim)
-
-#     def forward(self, x: float["b n d"], cond: float["b n d"], text_embed: float["b n d"], drop_audio_cond=False):  # noqa: F722
-#         if drop_audio_cond:  # cfg for cond audio
-#             cond = torch.zeros_like(cond)
-#         x = self.proj(torch.cat((x, cond, text_embed), dim=-1))
-#         x = self.conv_pos_embed(x) + x
-#         return x
-
-
-# V2) With emotion
-class InputEmbedding(nn.Module): # The InputEmeddign with emotion
+class InputEmbedding(nn.Module):
     def __init__(self, mel_dim, text_dim, emotion_dim, out_dim, emotion_condition_type, load_emotion_weights=True):
         super().__init__()
         self.proj = nn.Linear(mel_dim * 2 + text_dim, out_dim) # old (no emotion)
@@ -245,7 +173,7 @@ class InputEmbedding(nn.Module): # The InputEmeddign with emotion
         if drop_audio_cond:  # cfg for cond audio
             cond = torch.zeros_like(cond)
 
-        if self.emotion_condition_type in ['no_emotion_condition', 'text_early_fusion', 'cross_attention']:
+        if self.emotion_condition_type in ['no_emotion_condition', 'text_early_fusion', 'cross_attention', 'film']:
             x = self.proj(torch.cat((x, cond, text_embed), dim=-1))
         elif self.emotion_condition_type == 'text_mirror':
             x = self.proj_emotion(torch.cat((x, cond, text_embed, emotion_embed), dim=-1))
@@ -255,28 +183,6 @@ class InputEmbedding(nn.Module): # The InputEmeddign with emotion
         x = self.conv_pos_embed(x) + x
 
         return x
-
-class EmotionCrossAttention(nn.Module):
-    def __init__(self, dim):
-        super().__init__()
-        self.attn = nn.MultiheadAttention(dim, num_heads=8, batch_first=True)
-        self.gate = nn.Sequential(
-            nn.Linear(dim, 1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, hidden_states, emotion_embedding):
-        # Q = model hidden states -> the main source of information
-        # K and V = emotion embeddings -> the external information being injected
-        attn_output, _ = self.attn(hidden_states, emotion_embedding, emotion_embedding)
-        # V1) residual connection
-        return hidden_states + attn_output
-        # V2)
-        #return attn_output # 
-        # v3)
-        #alpha = 0.2
-        #alpha = self.gate(hidden_states)
-        #return (1 - alpha) * hidden_states + alpha * attn_output
 
 # Transformer backbone using DiT blocks
 class DiTConditioned(nn.Module):
@@ -310,9 +216,8 @@ class DiTConditioned(nn.Module):
         self.emotion_embed = EmotionEmbedding(emotion_num_embeds, emotion_dim, conv_layers=conv_layers)
         self.input_embed = InputEmbedding(mel_dim, text_dim, emotion_dim, dim, emotion_condition_type=self.emotion_conditioning['emotion_condition_type'], load_emotion_weights=self.emotion_conditioning['load_emotion_weights'])
         
-        # V1) and V2) -> one single corss attention isntance
-        self.emotion_cross_attn_blocks = nn.ModuleList([
-            EmotionCrossAttention(dim) for _ in range(depth)
+        self.emotion_film_blocks = nn.ModuleList([
+            EmotionFiLM(dim, emotion_dim) for _ in range(depth)
         ])
 
         self.rotary_embed = RotaryEmbedding(dim_head)
@@ -350,34 +255,26 @@ class DiTConditioned(nn.Module):
         text_embed = self.text_embed(text, emotion, seq_len, drop_text=drop_text, drop_emotion=drop_emotion_cond)
         
         if self.emotion_conditioning['emotion_condition_type'] in ['no_emotion_condition', 'text_early_fusion']:
-            x = self.input_embed(x, cond, text_embed, drop_audio_cond=drop_audio_cond) # no emotion_embed transmitted
-        elif self.emotion_conditioning['emotion_condition_type'] == 'cross_attention':
-            emotion_embed = self.emotion_embed(emotion, seq_len, drop_emotion=drop_emotion_cond) # still compute emotion embedding
             x = self.input_embed(x, cond, text_embed, drop_audio_cond=drop_audio_cond)
-
+            emotion_embed = None
+        elif self.emotion_conditioning['emotion_condition_type'] == 'film':
+            emotion_embed = self.emotion_embed(emotion, seq_len, drop_emotion=drop_emotion_cond)
+            x = self.input_embed(x, cond, text_embed, drop_audio_cond=drop_audio_cond)
         elif self.emotion_conditioning['emotion_condition_type'] == 'text_mirror':
             emotion_embed = self.emotion_embed(emotion, seq_len, drop_emotion=drop_emotion_cond)
             x = self.input_embed(x, cond, text_embed, emotion_embed, drop_audio_cond=drop_audio_cond)
         else:
             raise NotImplementedError(f'emotion_condition_type {self.emotion_conditioning["emotion_condition_type"]} is not implemented yet')
 
-
         rope = self.rotary_embed.forward_from_seq_len(seq_len)
 
         if self.long_skip_connection is not None:
             residual = x
 
-        for i, block in enumerate(self.transformer_blocks): 
-            if self.emotion_conditioning['emotion_condition_type'] == 'cross_attention':
-                # V1) apply coss attention here
-                #x = self.emotion_cross_attn(x, emotion_embed)
-                # V2) only apply cross attention in the 1st iteration
-                # if i==0:
-                #     x = self.emotion_cross_attn(x, emotion_embed)
-                # V3) One cross attention for each transition
-                x = self.emotion_cross_attn_blocks[i](x, emotion_embed)
-                 
+        for i, block in enumerate(self.transformer_blocks):
             x = block(x, t, mask=mask, rope=rope)
+            if emotion_embed is not None and self.emotion_conditioning['emotion_condition_type'] == 'film':
+                x = self.emotion_film_blocks[i](x, emotion_embed)
 
         if self.long_skip_connection is not None:
             x = self.long_skip_connection(torch.cat((x, residual), dim=-1))
