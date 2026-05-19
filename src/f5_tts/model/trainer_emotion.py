@@ -17,18 +17,9 @@ from tqdm import tqdm
 from f5_tts.model import CFM
 from f5_tts.model.dataset import DynamicBatchSampler, collate_fn, collate_fn_emotion
 from f5_tts.model.utils import default, exists
-from f5_tts.model.metrics import get_mcd_dtw, Calculate_MCD_from_ndarray, WhisperModelAdapter, get_error, replace_special_characters, link_words
-import matplotlib.pyplot as plt
+from f5_tts.model.metrics import Calculate_MCD_from_ndarray, WhisperModelAdapter, get_error, replace_special_characters, link_words
 from jiwer import wer
 import torch.nn.functional as F
-import psutil
-
-def get_memory_usage():
-    process = psutil.Process()
-    memory_info = process.memory_info()
-    memory_usage_mb = memory_info.rss / (1024 * 1024)
-    
-    return float(memory_usage_mb)
 
 
 class TrainerConditioned:
@@ -115,7 +106,6 @@ class TrainerConditioned:
         self.save_per_updates = save_per_updates
         self.last_per_steps = default(last_per_steps, save_per_updates * grad_accumulation_steps)
         self.checkpoint_path = default(checkpoint_path, "ckpts/test_e2-tts")
-        print('self.checkpoint_path :', self.checkpoint_path)
 
         self.batch_size = batch_size
         self.batch_size_type = batch_size_type
@@ -153,12 +143,11 @@ class TrainerConditioned:
             if not os.path.exists(self.checkpoint_path):
                 os.makedirs(self.checkpoint_path)
             if last:
-                print(f"Saved model as: ", f"{self.checkpoint_path}/model_last.pt")
                 self.accelerator.save(checkpoint, f"{self.checkpoint_path}/model_last.pt")
                 print(f"Saved last checkpoint at step {step}")
             else:
-                print(f"{self.checkpoint_path}/model_{step}.pt")
                 self.accelerator.save(checkpoint, f"{self.checkpoint_path}/model_{step}.pt")
+                print(f"Saved checkpoint at step {step}")
 
     def load_checkpoint(self):
         if (
@@ -172,13 +161,10 @@ class TrainerConditioned:
         if "model_last.pt" in os.listdir(self.checkpoint_path):
             latest_checkpoint = "model_last.pt"
         else:
-            print('self.checkpoint_path: ', self.checkpoint_path)
-            print(os.listdir(self.checkpoint_path))
             latest_checkpoint = sorted(
                 [f for f in os.listdir(self.checkpoint_path) if f.endswith(".pt")],
                 key=lambda x: int("".join(filter(str.isdigit, x))),
             )[-1]
-        # checkpoint = torch.load(f"{self.checkpoint_path}/{latest_checkpoint}", map_location=self.accelerator.device)  # rather use accelerator.load_state ಥ_ಥ
         checkpoint = torch.load(f"{self.checkpoint_path}/{latest_checkpoint}", weights_only=True, map_location="cpu")
 
         # patch for backward compatibility, 305e3ea
@@ -240,7 +226,6 @@ class TrainerConditioned:
                         gen_audio = vocoder.decode(
                             generated[:, ref_audio_len:, :].permute(0, 2, 1).to(self.accelerator.device)
                         )
-                        print('emotion_inputs: ', emotion_inputs)
                 elif masking_type == '2nd_part_proportional_masked':
                     cond = mel_spec[0, :int((first_phrase_length[0] * ref_audio_len / len(text_inputs[0])))] # select only the 1st part of the cond
 
@@ -276,7 +261,6 @@ class TrainerConditioned:
                 persistent_workers=True,
                 batch_size=batch_size,
                 shuffle=True,
-                #shuffle=False,
                 generator=generator,
             )
         elif self.batch_size_type == "frame":
@@ -298,10 +282,9 @@ class TrainerConditioned:
         return dataloader_instance
 
     def remove_leading_value(self, generated, reference, value=0.0):
-        '''This removes the 'value' elements in the beginning of a melspectrogram'''
+        '''Removes leading rows of constant value from the beginning of a melspectrogram'''
         gen_flat = generated[0]
-        #reference_flat = reference[0]
-        
+
         is_row_of_ones = torch.all(gen_flat == value, dim=1)
         num_rows_to_remove = torch.sum(is_row_of_ones).item()
         
@@ -458,9 +441,6 @@ class TrainerConditioned:
         self.model.train()
 
     def train(self, train_dataset: Dataset, val_dataset: Dataset, faster_whisper_path, num_workers=16, resumable_with_seed: int = None, masking_type='original', **kwargs):
-        print("01 self.optimizer.param_groups[0]['lr']: ", self.optimizer.param_groups[0]['lr'])
-
-        
         if self.log_samples:
             from f5_tts.infer.utils_infer import cfg_strength, load_vocoder, nfe_step, sway_sampling_coef
 
@@ -468,10 +448,8 @@ class TrainerConditioned:
             target_sample_rate = self.accelerator.unwrap_model(self.model).mel_spec.target_sample_rate
             log_samples_path = f"{self.checkpoint_path}/samples_train_sample"
             val_samples_path = f"{self.checkpoint_path}/samples_val"
-            # forward_samples_path = f"{self.checkpoint_path}/samples_train_forward"
             os.makedirs(log_samples_path, exist_ok=True)
             os.makedirs(val_samples_path, exist_ok=True)
-            # os.makedirs(forward_samples_path, exist_ok=True)
 
         if exists(resumable_with_seed):
             generator = torch.Generator()
@@ -647,8 +625,6 @@ class TrainerConditioned:
                     if self.logger == "tensorboard":
                         self.writer.add_scalar("loss", loss.item(), global_step)
                         self.writer.add_scalar("lr", self.scheduler.get_last_lr()[0], global_step)
-                        # if global_step % 1 == 0:
-                        #     self.writer.add_scalar("RAM", get_memory_usage(), global_step)
 
                 progress_bar.set_postfix(step=str(global_step), loss=loss.item())
 

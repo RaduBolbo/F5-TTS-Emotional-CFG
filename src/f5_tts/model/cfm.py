@@ -137,7 +137,7 @@ class CFM(nn.Module):
         duration = duration.clamp(max=max_duration)
         max_duration = duration.amax()
 
-        # duplicate test corner for inner time step oberservation
+        # duplicate test corner for inner time step observation
         if duplicate_test:
             test_cond = F.pad(cond, (0, 0, cond_seq_len, max_duration - 2 * cond_seq_len), value=0.0)
 
@@ -187,7 +187,7 @@ class CFM(nn.Module):
 
         t_start = 0
 
-        # duplicate test corner for inner time step oberservation
+        # duplicate test corner for inner time step observation
         if duplicate_test:
             t_start = t_inter
             y0 = (1 - t_start) * y0 + t_start * test_cond
@@ -200,8 +200,7 @@ class CFM(nn.Module):
 
         trajectory = odeint(fn, y0, t, **self.odeint_kwargs) # contains all the flow steps so far
 
-        sampled = trajectory[-1] # save the last foucntion evaluation (the last flow step)
-        #print('sampled.shape: ', sampled.shape) 
+        sampled = trajectory[-1] # save the last function evaluation (the last flow step)
         out = sampled
 
         out = torch.where(cond_mask, cond, out)
@@ -238,7 +237,7 @@ class CFM(nn.Module):
             assert text.shape[0] == batch
 
         # lens and mask
-        if not exists(lens): # lens are usually provided from then trainig script
+        if not exists(lens): # lens are usually provided from the training script
             lens = torch.full((batch,), seq_len, device=device)
 
         mask = lens_to_mask(lens, length=seq_len)  # useless here, as collate_fn will pad to max length in batch

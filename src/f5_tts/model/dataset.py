@@ -194,12 +194,9 @@ class CustomDatasetConditioned(Dataset):
                 raise ValueError('Dataset descriptor has to be either "ESD or "RAVDESS".')
 
         self.data = self._emotion_filtering(data) # only select allowed emotions
-        # create a dict where to keep phrase_idx -> speaker_id -> emotion -> self.data idx (so that I can easily find the index in self.data of a specific phrase of a specific sepaekr and a specific emotion)
+        # phrase_idx -> speaker_id -> emotion -> self.data idx for fast lookup
         self.data_maping = self.index_data(self.data)
-        with open('tmp_dict.json', 'w') as file:
-            json.dump(self.data_maping, file)
-        #self.durations = durations
-        
+
 
         self.target_sample_rate = mel_spec_kwargs['target_sample_rate']
         self.hop_length = mel_spec_kwargs['hop_length']
@@ -208,10 +205,8 @@ class CustomDatasetConditioned(Dataset):
         self.mel_spec_type = mel_spec_kwargs['mel_spec_type']
         self.preprocessed_mel = preprocessed_mel
         self.n_mel_channels = mel_spec_kwargs['n_mel_channels']
-        #self.change_emotion_probability = change_emotion_probability
-        #self.emotions = {"Angry", "Neutral", "Sad", "Surprise", "Happy"}
-        
-        self.phrase_idxs = {phrase_idx for phrase_idx in self.data_maping} # a set wit all phrase indexes
+
+        self.phrase_idxs = set(self.data_maping) # set of all phrase indexes
 
         if not self.preprocessed_mel: # if so melspec is computed on the fly in __getitem__()
             self.mel_spectrogram = default(
@@ -232,7 +227,7 @@ class CustomDatasetConditioned(Dataset):
 
     def index_data(self, data):
         '''
-        Trasnforms the dir such that any data sampel index can be foudn in linear time if it si searched by phrase_idx, speaker_id and emotion
+        Builds a nested dict for O(1) lookup by phrase_idx, speaker_id, and emotion.
         '''
         nested_dict = {}
 
@@ -258,31 +253,25 @@ class CustomDatasetConditioned(Dataset):
         '''
         second_phrase_idx can be imposed or it can be randomly selected, if the argument is None
         '''
-        #### mix with the second piece of utterance, if needed
         if change_emotion:
-            # choose a second utterance
-            #emotion_candidates = self.emotions - {emotion}
-            if second_phrase_idx is None: # if th e2nd phrase index is not specified
-                if self.emotion_conditioning_kwargs['same_sentence']: 
-                    second_phrase_idx = row['phrase_idx'] 
+            if second_phrase_idx is None:
+                if self.emotion_conditioning_kwargs['same_sentence']:
+                    second_phrase_idx = row['phrase_idx']
                 else:
                     second_phrase_idx = random.choice(list(self.phrase_idxs))
-            
-            #second_emotion = random.choice(list(emotion_candidates))
+
             try:
-                second_emotion = random.choice(list({emotion for emotion in self.data_maping[second_phrase_idx][row["speaker_id"]]} - {emotion})) # a list of all available emotions
+                available_emotions = set(self.data_maping[second_phrase_idx][row["speaker_id"]]) - {emotion}
+                second_emotion = random.choice(list(available_emotions))
                 second_row_index = self.data_maping[second_phrase_idx][row["speaker_id"]][second_emotion]
                 second_row = self.data[second_row_index[0]]
-            except:
-                print('!!!! Conditions not met 1. The 1st phrase will be replicated')
+            except (KeyError, IndexError):
                 second_row = row
         else:
-            attempts = 0
             max_num_attempts = 10
-            while attempts < max_num_attempts: # choose a phrase until it has that emotion
-                attempts += 1
-                if second_phrase_idx is None: # if th e2nd phrase index is not specified
-                    if self.emotion_conditioning_kwargs['same_sentence']:  
+            for _ in range(max_num_attempts):
+                if second_phrase_idx is None:
+                    if self.emotion_conditioning_kwargs['same_sentence']:
                         second_phrase_idx = row['phrase_idx']
                     else:
                         second_phrase_idx = random.choice(list(self.phrase_idxs))
@@ -291,9 +280,8 @@ class CustomDatasetConditioned(Dataset):
                     if emotion in self.data_maping[second_phrase_idx][row["speaker_id"]]:
                         second_row_index = self.data_maping[second_phrase_idx][row["speaker_id"]][emotion]
                         second_row = self.data[second_row_index[0]]
-                        break # break only if it was found
-            else: # executed if the phrase was not found (break)
-                print('!!!! Conditions not met 2. The 1st phrase will be replicated')
+                        break
+            else:
                 second_row = row
 
         # load the second piece of utterance
@@ -328,7 +316,7 @@ class CustomDatasetConditioned(Dataset):
         return mel_specs_concat, texts_concat, emotions, first_phrase_length, second_phrase_idx
 
     def __getitem__(self, index):
-        while True: # loop in case of 'contrastive_loss' tha tdoesn't find  a propper configuration
+        while True: # loop in case contrastive_loss doesn't find a proper configuration
             row = self.data[index]
 
             audio_path = row["audio_path"]
@@ -378,7 +366,6 @@ class CustomDatasetConditioned(Dataset):
                     ]
                     return sample
             else:
-                # else: only one utterance which can have the same emotion or not
                 change_emotion = random.uniform(0, 1) < self.emotion_conditioning_kwargs['change_emotion_probability']
                 mel_specs_concat, texts_concat, emotions, first_phrase_length, _ = self._sample_2nd_sentence(change_emotion, row, emotion, index, first_mel_spec)
                 return [dict(
@@ -387,12 +374,6 @@ class CustomDatasetConditioned(Dataset):
                     emotion=emotions,
                     first_phrase_length=first_phrase_length,
                 )]
-                # return dict(
-                #     mel_spec=mel_specs_concat,
-                #     text=texts_concat,
-                #     emotion=emotions,
-                #     first_phrase_length=first_phrase_length,
-                # )
 
 # Dynamic Batch Sampler
 
@@ -408,7 +389,6 @@ class DynamicBatchSampler(Sampler[list[int]]):
     def __init__(
         self, sampler: Sampler[int], frames_threshold: int, max_samples=0, random_seed=None, drop_last: bool = False
     ):
-        print('frames_threshold: ', frames_threshold)
         self.sampler = sampler
         self.frames_threshold = frames_threshold
         self.max_samples = max_samples
@@ -481,13 +461,11 @@ def load_dataset(
     print("Loading dataset ...")
 
     if dataset_type == "CustomDataset":
-        #rel_data_path = str(files("f5_tts").joinpath(f"../../data/{dataset_name}_{tokenizer}"))
-        #rel_data_path = str(files("f5_tts").joinpath(f"data/{dataset_name}_{tokenizer}"))
         rel_data_path = f"data/{dataset_name}_{tokenizer}"
         if audio_type == "raw":
             try:
                 train_dataset = load_from_disk(f"{rel_data_path}/raw")
-            except:  # noqa: E722
+            except Exception:
                 train_dataset = Dataset_.from_file(f"{rel_data_path}/raw.arrow")
             preprocessed_mel = False
         elif audio_type == "mel":

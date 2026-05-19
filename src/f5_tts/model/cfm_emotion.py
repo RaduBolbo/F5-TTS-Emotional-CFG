@@ -87,10 +87,10 @@ class CFMConditioned(nn.Module):
     def device(self):
         return next(self.parameters()).device
 
-    def tokenize_emotion(self, emotion, text_shape, first_phrase_length,initial_text_dims, device):
+    def tokenize_emotion(self, emotion, text_shape, first_phrase_length, initial_text_dims, device):
         emotion = torch.tensor([[self.emotion_dict.get(emotion, 0) for emotion in batch] for batch in emotion], device=device)
         if 0 in emotion:
-            raise('Unknown emotion found in the emotion conditioning input.')
+            raise ValueError('Unknown emotion found in the emotion conditioning input.')
         emotion_tokens = torch.full((emotion.shape[0], text_shape), -1, device=device)
         for i in range(len(first_phrase_length)):
             emotion_tokens[i, first_phrase_length[i]:initial_text_dims[i]] = emotion[i, 1].item()
@@ -203,8 +203,6 @@ class CFMConditioned(nn.Module):
                 )
                 return pred + (pred - null_pred) * cfg_strength + (pred - half_pred) * cfg_strength2
             else:
-                print('cfg_strength2 is None. Classical CFM applied')
-                
                 return pred + (pred - null_pred) * cfg_strength
 
         # noise input
@@ -264,27 +262,16 @@ class CFMConditioned(nn.Module):
         contrastive_loss = isinstance(emotion, tuple)
         if contrastive_loss:
             emotion, emotion2 = emotion
-            #print(emotion, emotion2)
 
         mode = None
         if change_emotion_forward:
-            #mode = 'binary_interpolation'
             mode = 'triple_interpolation'
-            if mode == 'binary_interpolation':
-                change_target = random() < 0.5
-                if change_target:
-                    mel_target, mel_source = inp
-                    inp = mel_source
-                else:
-                    mel_target, mel_source = inp
-                    inp = mel_target
-            elif mode == 'triple_interpolation':
-                mel1, mel2 = inp
-                #mel_source = 
-                mel_target = mel1
-                inp = mel_target
+            mel1, mel2 = inp
+            mel_target = mel1
+            mel_source = mel2
+            inp = mel_target
 
-    
+
         # handle raw wave
         if inp.ndim == 2:
             inp = self.mel_spec(inp)
@@ -307,12 +294,9 @@ class CFMConditioned(nn.Module):
         emotion = self.tokenize_emotion(emotion, text.shape[1], first_phrase_length, initial_text_dims, device)
         if contrastive_loss:
             emotion2 = self.tokenize_emotion(emotion2, text.shape[1], first_phrase_length, initial_text_dims, device)
-        # print('emotion after torkenizing in CFM (before transfoermer): ')
-        # print('emotion.shape: ', emotion.shape)
-        # print('emotion: ', emotion)
 
         # lens and mask
-        if not exists(lens): # lens are usually provided from then trainig script
+        if not exists(lens): # lens are usually provided from the training script
             lens = torch.full((batch,), seq_len, device=device)
 
         mask = lens_to_mask(lens, length=seq_len)  # useless here, as collate_fn will pad to max length in batch
@@ -356,10 +340,7 @@ class CFMConditioned(nn.Module):
             φ = (1 - t) * x0 + t * x1
             
         if change_emotion_forward:
-            if mode == 'binary_interpolation':
-                flow = mel_target - x0
-            elif mode == 'triple_interpolation':
-                flow = mel_target - mel_source
+            flow = mel_target - mel_source
         else:
             flow = x1 - x0
 
