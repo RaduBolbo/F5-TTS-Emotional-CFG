@@ -498,17 +498,19 @@ class TrainerConditioned:
 
         freeze_backbone = kwargs['freeze_backbone']
         if freeze_backbone:
-            #if kwargs['emotion_conditioning']['emotion_condition_type'] == 'text_mirror':
-                print('Freezing network 🧊 ...')
-                # Freeze all parameters in self.model.transformer
-                for param in self.model.transformer.parameters():
-                    param.requires_grad = False
+            print('Freezing backbone ...')
+            for param in self.model.transformer.parameters():
+                param.requires_grad = False
 
-                # Unfreeze the parameters of input_embed and emotion_embed
-                for param in self.model.transformer.input_embed.parameters():
-                    param.requires_grad = True
+            # Unfreeze emotion-related parameters
+            for param in self.model.transformer.input_embed.parameters():
+                param.requires_grad = True
 
-                for param in self.model.transformer.emotion_embed.parameters():
+            for param in self.model.transformer.emotion_embed.parameters():
+                param.requires_grad = True
+
+            if kwargs['emotion_conditioning']['emotion_condition_type'] == 'film':
+                for param in self.model.transformer.emotion_film_blocks.parameters():
                     param.requires_grad = True
 
         for epoch in range(skipped_epoch, self.epochs):

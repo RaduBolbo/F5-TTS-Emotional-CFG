@@ -1,15 +1,12 @@
 # training script.
 
-from importlib.resources import files
+import copy
 
-#from f5_tts.model import CFM, DiT, UNetT # old version without emotion conditioning
-from f5_tts.model import CFMConditioned, DiTConditioned, UNetT # new version, with emotion conditioning
+from f5_tts.model import CFMConditioned, DiTConditioned, UNetT
 from f5_tts.model.dataset import load_dataset
 from f5_tts.model.utils import get_tokenizer
 from f5_tts.model.trainer_emotion import TrainerConditioned
 from torch.utils.data import ConcatDataset
-
-import copy
 
 
 #-------------------------- Dataset Settings --------------------------- #
@@ -27,9 +24,6 @@ tokenizer_path = None  # if tokenizer = 'custom', define the path to the tokeniz
 #dataset_name = "Emilia_ZH_EN"
 train_dataset_name = "EmiliaPetite_dataset_ZH_EN"
 val_dataset_name = 'EmiliaPetite_dataset_ZH_EN_val'
-
-# train_dataset_path_esd = 'dataset/Emotional Speech Dataset (ESD)/train/dataset_descriptor.json' # ESD
-# train_dataset_path_ravdess = 'dataset/RAVDESS/ravdess_metadata.json' # RAVDESS
 
 val_dataset_path = 'dataset/ESD/val/dataset_descriptor.json'
 
@@ -49,7 +43,6 @@ checkpoint_path = f"ckpts/{exp_name}"
 
 learning_rate = 1e-5
 
-batch_size_per_gpu = 384
 batch_size_per_gpu = 2
 batch_size_type = "sample"  # "frame" or "sample". Only "sample" is supported by the dataset_type="CustomDatasetConditioned"
 max_samples = 64  # max sequences per batch if use frame-wise batch_size.
@@ -71,7 +64,6 @@ training_config = {
     'compute_wer_valid': False,
     'compute_mcd_valid': False,
     'dataset_keys': ['ESD'],
-    #'masking_type': 'original',
     'masking_type': '2nd_part_proportional_masked',
 
     'change_emotion_forward': False,
@@ -79,48 +71,25 @@ training_config = {
     'noise_2ndhalf': 'uniform', # other otpions than 'uniform' are proven o cause probelms at sample()
 
     # -----------------------
-    # I) 'emotion_condition_type' 🎭
-    # V0) Non-emotional
-    # 'emotion_conditioning': {
-    #     'emotion_condition_type': 'no_emotion_condition',
-    # },
-
-    # V1) text_mirror and late concatenation
+    # I) 'emotion_condition_type':
+    #   'no_emotion_condition' - baseline, no emotion signal
+    #   'text_early_fusion'   - adds emotion embedding to text embedding (scaled by 0.1)
+    #   'text_mirror'         - concatenates emotion to input projection
+    #   'film'                - per-layer FiLM modulation (scale+shift) after each DiT block
     'emotion_conditioning': {
-        'emotion_condition_type': 'text_mirror', 
-        'init_type': 'xavier_reduced', 
-        'weight_reduction_scale': 1, 
-        #'emotion_dim': 16,
+        'emotion_condition_type': 'film',
+        'emotion_dim': 512,
         'emotion_conv_layers': 4,
-        #'load_emotion_weights': True, # keep it True if not loading a modle that already has emotion conditioning. Make it False when loading a pretrained emotion model
-        'load_emotion_weights': False, # keep it True if not loading a modle that already has emotion conditioning. Make it False when loading a pretrained emotion model
+        'load_emotion_weights': False, # True when adapting a pretrained non-emotion model; False when resuming an emotion-aware checkpoint
     },
-
-    # V2) cross attnetion
-    # 'emotion_conditioning': {
-    #     'emotion_condition_type': 'cross_attention',
-    #     'emotion_dim': 1024,
-    #     'emotion_conv_layers': 4,
-    #     'load_emotion_weights': True
-    # },
-
-    # V3) text_early_fusion
-    # 'emotion_conditioning': {
-    #     'emotion_condition_type': 'text_early_fusion',
-    #     'emotion_dim': 128,
-    #     'emotion_conv_layers': 4,
-    #     'load_emotion_weights': True,
-    # },
 
     # -----------------------
     # II) Dataset parameters
     'emotion_conditioning_kwargs': {
-        'emotions': {"Angry", "Neutral", "Sad", "Surprise", "Happy"}, # This is all the dataset: all emotions
-        #'emotions': {"Sad", "Happy"}, # just 2 opposed emotoins
-        #'emotions': {"Sad", "Happy", "Neutral"}, # just 2 opposed emotoins + Neutral
-        'change_emotion_probability': 0.5, # If the emotion in the 1st and 2nd phrase differ .0 = never change emotion; 1 = always change emotion
-        'same_sentence': False, # if True, the 1st and 2nd sentence will be the same phrase, from the same actor, but with distinct emotions
-        'contrastive_loss': False, 
+        'emotions': {"Angry", "Neutral", "Sad", "Surprise", "Happy"},
+        'change_emotion_probability': 0.5,
+        'same_sentence': False,
+        'contrastive_loss': False,
     }
 }
 
@@ -130,10 +99,15 @@ emotion_conditioning_val_kwargs['contrastive_loss'] = False
 
 
 # model params
+emotion_cfg = training_config['emotion_conditioning']
 if "F5TTS_Base" in exp_name:
     wandb_resume_id = None
     model_cls = DiTConditioned
-    model_cfg = dict(dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512, emotion_dim=training_config['emotion_conditioning']['emotion_dim'], conv_layers=training_config['emotion_conditioning']['emotion_conv_layers'])
+    model_cfg = dict(
+        dim=1024, depth=22, heads=16, ff_mult=2, text_dim=512,
+        emotion_dim=emotion_cfg.get('emotion_dim', 100),
+        conv_layers=emotion_cfg.get('emotion_conv_layers', 0),
+    )
 elif exp_name == "E2TTS_Base":
     wandb_resume_id = None
     model_cls = UNetT
@@ -144,12 +118,8 @@ elif exp_name == "E2TTS_Base":
 
 
 def main():
-    if tokenizer == "custom":
-        tokenizer_path = tokenizer_path
-    else:
-        tokenizer_path = train_dataset_name
-
-    vocab_char_map, vocab_size = get_tokenizer(tokenizer_path, tokenizer)
+    tok_path = tokenizer_path if tokenizer == "custom" else train_dataset_name
+    vocab_char_map, vocab_size = get_tokenizer(tok_path, tokenizer)
 
     mel_spec_kwargs = dict(
         n_fft=n_fft,
@@ -172,7 +142,6 @@ def main():
         learning_rate,
         num_warmup_updates=2,
         save_per_updates=save_per_updates,
-        #checkpoint_path=str(files("f5_tts").joinpath(f"../../ckpts/{exp_name}")),
         checkpoint_path=checkpoint_path,
         batch_size=batch_size_per_gpu,
         batch_size_type=batch_size_type,

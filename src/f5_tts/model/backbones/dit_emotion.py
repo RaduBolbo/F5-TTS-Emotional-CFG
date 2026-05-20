@@ -173,7 +173,7 @@ class InputEmbedding(nn.Module):
         if drop_audio_cond:  # cfg for cond audio
             cond = torch.zeros_like(cond)
 
-        if self.emotion_condition_type in ['no_emotion_condition', 'text_early_fusion', 'cross_attention', 'film']:
+        if self.emotion_condition_type in ['no_emotion_condition', 'text_early_fusion', 'film']:
             x = self.proj(torch.cat((x, cond, text_embed), dim=-1))
         elif self.emotion_condition_type == 'text_mirror':
             x = self.proj_emotion(torch.cat((x, cond, text_embed, emotion_embed), dim=-1))
@@ -214,11 +214,12 @@ class DiTConditioned(nn.Module):
             emotion_dim = mel_dim
         self.text_embed = TextEmbedding(self.emotion_conditioning['emotion_condition_type'], text_num_embeds, text_dim, conv_layers=conv_layers, emotion_num_embeds=emotion_num_embeds, emotion_dim=emotion_dim)
         self.emotion_embed = EmotionEmbedding(emotion_num_embeds, emotion_dim, conv_layers=conv_layers)
-        self.input_embed = InputEmbedding(mel_dim, text_dim, emotion_dim, dim, emotion_condition_type=self.emotion_conditioning['emotion_condition_type'], load_emotion_weights=self.emotion_conditioning['load_emotion_weights'])
+        self.input_embed = InputEmbedding(mel_dim, text_dim, emotion_dim, dim, emotion_condition_type=self.emotion_conditioning['emotion_condition_type'], load_emotion_weights=self.emotion_conditioning.get('load_emotion_weights', False))
         
-        self.emotion_film_blocks = nn.ModuleList([
-            EmotionFiLM(dim, emotion_dim) for _ in range(depth)
-        ])
+        if self.emotion_conditioning['emotion_condition_type'] == 'film':
+            self.emotion_film_blocks = nn.ModuleList([
+                EmotionFiLM(dim, emotion_dim) for _ in range(depth)
+            ])
 
         self.rotary_embed = RotaryEmbedding(dim_head)
 
