@@ -13,6 +13,18 @@ TOP_KEYS = ("ESD", "RAVDESS", "CREMA-D")
 
 
 def _load(path):
+    if path.endswith(".jsonl"):
+        records = []
+        with open(path, "r", encoding="utf-8") as f:
+            for i, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    raise SystemExit(f"{path}:{i}: invalid JSON line ({e})")
+        return path, records
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     for key in TOP_KEYS:
