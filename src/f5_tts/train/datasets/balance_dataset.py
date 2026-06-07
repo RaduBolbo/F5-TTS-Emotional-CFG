@@ -86,6 +86,9 @@ def main():
                    help="Override the top-level key written to --output "
                         "(must be one of ESD/RAVDESS/CREMA-D).")
     p.add_argument("--output", required=True, help="Where to write the balanced descriptor.")
+    p.add_argument("--labels", default=None,
+                   help="Comma-separated whitelist of labels to keep. "
+                        "Records with other labels are dropped before balancing.")
     p.add_argument("--strategy", default="undersample",
                    choices=["undersample", "oversample", "median"],
                    help="How to pick the per-label target count if --target-count is unset.")
@@ -104,6 +107,15 @@ def main():
             raise SystemExit(f"--top-key must be one of {TOP_KEYS} (got {args.top_key!r})")
         top_key = args.top_key
     print(f"Merged {len(records)} records; output top key = {top_key!r}")
+
+    if args.labels:
+        wanted = {s.strip() for s in args.labels.split(",") if s.strip()}
+        before = len(records)
+        records = [r for r in records if r["emotion"] in wanted]
+        print(f"Filtered to {len(wanted)} label(s): kept {len(records)}/{before}")
+        missing = wanted - {r["emotion"] for r in records}
+        if missing:
+            print(f"Warning: no records found for labels: {sorted(missing)}")
     print("Original counts:")
     for lbl, n in Counter(r["emotion"] for r in records).most_common():
         print(f"  {lbl:40s} {n}")
