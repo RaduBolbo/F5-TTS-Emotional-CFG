@@ -23,6 +23,20 @@ def _load(path):
     raise SystemExit(f"Descriptor {path} has no top key in {TOP_KEYS}.")
 
 
+def _load_many(paths):
+    merged = []
+    top_keys_seen = set()
+    for path in paths:
+        key, records = _load(path)
+        top_keys_seen.add(key)
+        print(f"  {path}: {len(records)} records under {key!r}")
+        merged.extend(records)
+    if len(top_keys_seen) > 1:
+        print(f"Note: inputs use different top keys {top_keys_seen}; "
+              f"output will use {sorted(top_keys_seen)[0]!r}")
+    return sorted(top_keys_seen)[0], merged
+
+
 def _group_by_label(records):
     groups = defaultdict(list)
     for r in records:
@@ -66,7 +80,11 @@ def balance(records, strategy, target_count, seed):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--input", required=True, help="Source descriptor JSON.")
+    p.add_argument("--input", required=True, nargs="+",
+                   help="One or more source descriptor JSONs. Records are merged before balancing.")
+    p.add_argument("--top-key", default=None,
+                   help="Override the top-level key written to --output "
+                        "(must be one of ESD/RAVDESS/CREMA-D).")
     p.add_argument("--output", required=True, help="Where to write the balanced descriptor.")
     p.add_argument("--strategy", default="undersample",
                    choices=["undersample", "oversample", "median"],
@@ -79,8 +97,13 @@ def main():
                    help="Optional path to a labels.json to rewrite with the new counts.")
     args = p.parse_args()
 
-    top_key, records = _load(args.input)
-    print(f"Loaded {len(records)} records under top key {top_key!r}")
+    print(f"Loading {len(args.input)} descriptor(s):")
+    top_key, records = _load_many(args.input)
+    if args.top_key:
+        if args.top_key not in TOP_KEYS:
+            raise SystemExit(f"--top-key must be one of {TOP_KEYS} (got {args.top_key!r})")
+        top_key = args.top_key
+    print(f"Merged {len(records)} records; output top key = {top_key!r}")
     print("Original counts:")
     for lbl, n in Counter(r["emotion"] for r in records).most_common():
         print(f"  {lbl:40s} {n}")
