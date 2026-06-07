@@ -15,6 +15,18 @@ TOP_KEYS = ("ESD", "RAVDESS", "CREMA-D")
 
 
 def _load(path):
+    if path.endswith(".jsonl"):
+        records = []
+        with open(path, "r", encoding="utf-8") as f:
+            for i, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    records.append(json.loads(line))
+                except json.JSONDecodeError as e:
+                    raise SystemExit(f"{path}:{i}: invalid JSON line ({e})")
+        return None, records
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     for key in TOP_KEYS:
@@ -28,13 +40,15 @@ def _load_many(paths):
     top_keys_seen = set()
     for path in paths:
         key, records = _load(path)
-        top_keys_seen.add(key)
+        if key is not None:
+            top_keys_seen.add(key)
         print(f"  {path}: {len(records)} records under {key!r}")
         merged.extend(records)
     if len(top_keys_seen) > 1:
         print(f"Note: inputs use different top keys {top_keys_seen}; "
               f"output will use {sorted(top_keys_seen)[0]!r}")
-    return sorted(top_keys_seen)[0], merged
+    top_key = sorted(top_keys_seen)[0] if top_keys_seen else None
+    return top_key, merged
 
 
 def _group_by_label(records, field):
@@ -108,6 +122,12 @@ def main():
         if args.top_key not in TOP_KEYS:
             raise SystemExit(f"--top-key must be one of {TOP_KEYS} (got {args.top_key!r})")
         top_key = args.top_key
+    out_path = Path(args.output)
+    if top_key is None and not out_path.name.endswith(".jsonl"):
+        raise SystemExit(
+            "Inputs are JSONL (no top key); pass --top-key for JSON output "
+            "or use a .jsonl --output path."
+        )
     print(f"Merged {len(records)} records; output top key = {top_key!r}")
 
     field = args.label_field
@@ -127,10 +147,13 @@ def main():
         records, args.strategy, args.target_count, args.seed, field
     )
 
-    out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
-        json.dump({top_key: balanced}, f, ensure_ascii=False, indent=2)
+        if out_path.name.endswith(".jsonl"):
+            for r in balanced:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        else:
+            json.dump({top_key: balanced}, f, ensure_ascii=False, indent=2)
 
     print(f"\nWrote {len(balanced)} records (target={target}) → {out_path}")
     print("Balanced counts:")
