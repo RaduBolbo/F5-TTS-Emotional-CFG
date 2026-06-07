@@ -1,12 +1,38 @@
 # training script.
 
+import argparse
 import copy
+import json
 
 from f5_tts.model import CFMConditioned, DiTConditioned, UNetT
 from f5_tts.model.dataset import load_dataset
 from f5_tts.model.utils import get_tokenizer
 from f5_tts.model.trainer_emotion import TrainerConditioned
 from torch.utils.data import ConcatDataset
+
+
+def _parse_args():
+    p = argparse.ArgumentParser(
+        description="Finetune F5-TTS with categorical conditioning. "
+                    "Defaults match the in-file config; CLI flags override.",
+        allow_abbrev=False,
+    )
+    p.add_argument("--train-descriptor", default=None,
+                   help="Path to a single training descriptor JSON. "
+                        "Overrides train_dataset_paths and forces dataset_keys=['ESD'].")
+    p.add_argument("--val-descriptor", default=None,
+                   help="Path to the validation descriptor JSON.")
+    p.add_argument("--labels-file", default=None,
+                   help="Path to a labels.json (from prepare_generic_dataset.py) "
+                        "whose 'labels' list becomes the conditioning vocabulary.")
+    p.add_argument("--labels", default=None,
+                   help="Comma-separated label set. Overrides --labels-file.")
+    p.add_argument("--change-label-prob", type=float, default=None,
+                   help="Probability of sampling a second clip with a different label. "
+                        "Set 0.0 for non-parallel datasets (default in-file: 0.5).")
+    p.add_argument("--checkpoint-path", default=None,
+                   help="Override the checkpoint directory.")
+    return p.parse_args()
 
 
 #-------------------------- Dataset Settings --------------------------- #
@@ -93,11 +119,6 @@ training_config = {
     }
 }
 
-emotion_conditioning_kwargs = copy.deepcopy(training_config['emotion_conditioning_kwargs'])
-emotion_conditioning_val_kwargs = copy.deepcopy(training_config['emotion_conditioning_kwargs'])
-emotion_conditioning_val_kwargs['contrastive_loss'] = False
-
-
 # model params
 emotion_cfg = training_config['emotion_conditioning']
 if "F5TTS_Base" in exp_name:
@@ -118,6 +139,34 @@ elif exp_name == "E2TTS_Base":
 
 
 def main():
+    cli = _parse_args()
+
+    if cli.labels is not None:
+        training_config['emotion_conditioning_kwargs']['emotions'] = {
+            s.strip() for s in cli.labels.split(",") if s.strip()
+        }
+    elif cli.labels_file is not None:
+        with open(cli.labels_file, "r", encoding="utf-8") as f:
+            training_config['emotion_conditioning_kwargs']['emotions'] = set(json.load(f)["labels"])
+
+    if cli.change_label_prob is not None:
+        training_config['emotion_conditioning_kwargs']['change_emotion_probability'] = cli.change_label_prob
+
+    if cli.train_descriptor is not None:
+        train_dataset_paths.clear()
+        train_dataset_paths['ESD'] = cli.train_descriptor
+        training_config['dataset_keys'] = ['ESD']
+
+    if cli.val_descriptor is not None:
+        global val_dataset_path
+        val_dataset_path = cli.val_descriptor
+
+    ckpt_dir = cli.checkpoint_path or checkpoint_path
+
+    emotion_conditioning_kwargs = copy.deepcopy(training_config['emotion_conditioning_kwargs'])
+    emotion_conditioning_val_kwargs = copy.deepcopy(training_config['emotion_conditioning_kwargs'])
+    emotion_conditioning_val_kwargs['contrastive_loss'] = False
+
     tok_path = tokenizer_path if tokenizer == "custom" else train_dataset_name
     vocab_char_map, vocab_size = get_tokenizer(tok_path, tokenizer)
 
@@ -142,7 +191,7 @@ def main():
         learning_rate,
         num_warmup_updates=2,
         save_per_updates=save_per_updates,
-        checkpoint_path=checkpoint_path,
+        checkpoint_path=ckpt_dir,
         batch_size=batch_size_per_gpu,
         batch_size_type=batch_size_type,
         max_samples=max_samples,
