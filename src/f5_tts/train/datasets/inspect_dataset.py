@@ -10,6 +10,7 @@ from collections import Counter
 
 
 TOP_KEYS = ("ESD", "RAVDESS", "CREMA-D")
+LABEL_FIELDS = ("emotion", "label")
 
 
 def _load(path):
@@ -51,13 +52,23 @@ def main():
                    help="Skip per-file breakdown; print only merged totals.")
     p.add_argument("--json", action="store_true",
                    help="Emit counts as JSON instead of a table.")
+    p.add_argument("--label-field", default=None,
+                   help=f"Record field to count. If unset, auto-detects from {LABEL_FIELDS}.")
     args = p.parse_args()
 
     per_file = {}
     merged = Counter()
     for path in args.input:
         _, records = _load(path)
-        c = Counter(r["emotion"] for r in records)
+        field = args.label_field or next(
+            (k for k in LABEL_FIELDS if records and k in records[0]), None
+        )
+        if field is None:
+            raise SystemExit(
+                f"{path}: no label field found (looked for {LABEL_FIELDS}); "
+                f"pass --label-field explicitly."
+            )
+        c = Counter(r[field] for r in records)
         per_file[path] = c
         merged.update(c)
 
