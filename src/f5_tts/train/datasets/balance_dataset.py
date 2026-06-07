@@ -37,10 +37,10 @@ def _load_many(paths):
     return sorted(top_keys_seen)[0], merged
 
 
-def _group_by_label(records):
+def _group_by_label(records, field):
     groups = defaultdict(list)
     for r in records:
-        groups[r["emotion"]].append(r)
+        groups[r[field]].append(r)
     return groups
 
 
@@ -58,9 +58,9 @@ def _resolve_target(groups, strategy, explicit):
     raise SystemExit(f"Unknown strategy {strategy!r}")
 
 
-def balance(records, strategy, target_count, seed):
+def balance(records, strategy, target_count, seed, field):
     rng = random.Random(seed)
-    groups = _group_by_label(records)
+    groups = _group_by_label(records, field)
     target = _resolve_target(groups, strategy, target_count)
 
     balanced = []
@@ -98,6 +98,8 @@ def main():
                    help="RNG seed for sampling reproducibility.")
     p.add_argument("--update-labels-file", default=None,
                    help="Optional path to a labels.json to rewrite with the new counts.")
+    p.add_argument("--label-field", default="emotion",
+                   help="Record field naming the label (default: emotion).")
     args = p.parse_args()
 
     print(f"Loading {len(args.input)} descriptor(s):")
@@ -108,20 +110,21 @@ def main():
         top_key = args.top_key
     print(f"Merged {len(records)} records; output top key = {top_key!r}")
 
+    field = args.label_field
     if args.labels:
         wanted = {s.strip() for s in args.labels.split(",") if s.strip()}
         before = len(records)
-        records = [r for r in records if r["emotion"] in wanted]
+        records = [r for r in records if r[field] in wanted]
         print(f"Filtered to {len(wanted)} label(s): kept {len(records)}/{before}")
-        missing = wanted - {r["emotion"] for r in records}
+        missing = wanted - {r[field] for r in records}
         if missing:
             print(f"Warning: no records found for labels: {sorted(missing)}")
     print("Original counts:")
-    for lbl, n in Counter(r["emotion"] for r in records).most_common():
+    for lbl, n in Counter(r[field] for r in records).most_common():
         print(f"  {lbl:40s} {n}")
 
     balanced, per_label_final, target = balance(
-        records, args.strategy, args.target_count, args.seed
+        records, args.strategy, args.target_count, args.seed, field
     )
 
     out_path = Path(args.output)
