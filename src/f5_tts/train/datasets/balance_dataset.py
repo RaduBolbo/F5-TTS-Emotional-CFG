@@ -42,7 +42,9 @@ def _load_many(paths):
         key, records = _load(path)
         if key is not None:
             top_keys_seen.add(key)
-        print(f"  {path}: {len(records)} records under {key!r}")
+            print(f"  {path}: {len(records)} records under {key!r}")
+        else:
+            print(f"  {path}: {len(records)} records (jsonl)")
         merged.extend(records)
     if len(top_keys_seen) > 1:
         print(f"Note: inputs use different top keys {top_keys_seen}; "
