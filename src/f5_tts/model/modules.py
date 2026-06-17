@@ -180,7 +180,7 @@ class ConvPositionEmbedding(nn.Module):
             mask = mask[..., None]
             x = x.masked_fill(~mask, 0.0)
 
-        x = x.permute(0, 2, 1) # conv kernel slides along the feature dimesnion. because the last dimesnion is the feature dimension, it gets replaced with the sequence dimension. 
+        x = x.permute(0, 2, 1) # conv kernel slides along the feature dimension
         x = self.conv1d(x)
         out = x.permute(0, 2, 1)
 
@@ -533,6 +533,28 @@ class JointAttnProcessor:
             # c = c.masked_fill(~mask, 0.)  # no mask for c (text)
 
         return x, c
+
+
+# FiLM modulation for emotion conditioning (style/prosody control)
+
+
+class EmotionFiLM(nn.Module):
+    def __init__(self, dim, emotion_embed_dim):
+        super().__init__()
+        self.norm = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
+        self.proj = nn.Sequential(
+            nn.Linear(emotion_embed_dim, dim),
+            nn.SiLU(),
+            nn.Linear(dim, dim * 2),
+        )
+        nn.init.zeros_(self.proj[-1].weight)
+        nn.init.zeros_(self.proj[-1].bias)
+
+    def forward(self, x, emotion_embed):
+        emotion_global = emotion_embed.mean(dim=1)
+        params = self.proj(emotion_global)
+        scale, shift = params.chunk(2, dim=-1)
+        return self.norm(x) * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
 
 
 # DiT Block

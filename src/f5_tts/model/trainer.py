@@ -93,7 +93,6 @@ class Trainer:
             from torch.utils.tensorboard import SummaryWriter
 
             self.writer = SummaryWriter(log_dir=f"runs/{wandb_run_name}")
-            print("sumary wrighter at: ", f"runs/{wandb_run_name}")
 
         self.model = model
 
@@ -143,14 +142,11 @@ class Trainer:
             if not os.path.exists(self.checkpoint_path):
                 os.makedirs(self.checkpoint_path)
             if last:
-                print(self.checkpoint_path)
-                print(f"Saved model as: ", f"{self.checkpoint_path}/model_last.pt")
                 self.accelerator.save(checkpoint, f"{self.checkpoint_path}/model_last.pt")
                 print(f"Saved last checkpoint at step {step}")
             else:
-                print(self.checkpoint_path)
-                print(f"{self.checkpoint_path}/model_{step}.pt")
                 self.accelerator.save(checkpoint, f"{self.checkpoint_path}/model_{step}.pt")
+                print(f"Saved checkpoint at step {step}")
 
     def load_checkpoint(self):
         if (
@@ -164,13 +160,10 @@ class Trainer:
         if "model_last.pt" in os.listdir(self.checkpoint_path):
             latest_checkpoint = "model_last.pt"
         else:
-            print('self.checkpoint_path: ', self.checkpoint_path)
-            print(os.listdir(self.checkpoint_path))
             latest_checkpoint = sorted(
                 [f for f in os.listdir(self.checkpoint_path) if f.endswith(".pt")],
                 key=lambda x: int("".join(filter(str.isdigit, x))),
             )[-1]
-        # checkpoint = torch.load(f"{self.checkpoint_path}/{latest_checkpoint}", map_location=self.accelerator.device)  # rather use accelerator.load_state ಥ_ಥ
         checkpoint = torch.load(f"{self.checkpoint_path}/{latest_checkpoint}", weights_only=True, map_location="cpu")
 
         # patch for backward compatibility, 305e3ea
@@ -209,7 +202,6 @@ class Trainer:
         torchaudio.save(
             ref_wav_path, ref_audio.cpu(), target_sample_rate
         )
-        print('Saved wav sample at: ', ref_wav_path)
         with torch.inference_mode():
             generated, _ = self.accelerator.unwrap_model(self.model).sample(
                 cond=mel_spec[0][:ref_audio_len].unsqueeze(0),
@@ -226,9 +218,8 @@ class Trainer:
         torchaudio.save(
             gen_wav_path, gen_audio.cpu(), target_sample_rate
         )
-        print('Saved wav sample at: ', gen_wav_path)
 
-    def _return_dataloader(self, dataset_instance, num_workers, collate_fn, generator):
+    def _return_dataloader(self, dataset_instance, num_workers, collate_fn, generator, resumable_with_seed=None):
         if self.batch_size_type == "sample":
             dataloader_instance = DataLoader(
                 dataset_instance,
@@ -242,13 +233,10 @@ class Trainer:
             )
         elif self.batch_size_type == "frame":
             self.accelerator.even_batches = False
-            print('len(train_dataset): ', len(train_dataset))
-            sampler = SequentialSampler(train_dataset)
-            print('len(sampler): ', len(sampler))
+            sampler = SequentialSampler(dataset_instance)
             batch_sampler = DynamicBatchSampler(
                 sampler, self.batch_size, max_samples=self.max_samples, random_seed=resumable_with_seed, drop_last=False
             )
-            print('len(batch_sampler): ', len(batch_sampler))
             dataloader_instance = DataLoader(
                 dataset_instance,
                 collate_fn=collate_fn,
@@ -257,7 +245,6 @@ class Trainer:
                 persistent_workers=True,
                 batch_sampler=batch_sampler,
             )
-            print('len(dataloader_instance): ', len(dataloader_instance))
         else:
             raise ValueError(f"batch_size_type must be either 'sample' or 'frame', but received {self.batch_size_type}")
         return dataloader_instance
@@ -283,7 +270,6 @@ class Trainer:
             vocoder = load_vocoder(vocoder_name=self.vocoder_name)
             target_sample_rate = self.accelerator.unwrap_model(self.model).mel_spec.target_sample_rate
             log_samples_path = f"{self.checkpoint_path}/samples"
-            print('log_sample_path: ', log_samples_path)
             os.makedirs(log_samples_path, exist_ok=True)
 
         if exists(resumable_with_seed):
@@ -292,16 +278,14 @@ class Trainer:
         else:
             generator = None
 
-        train_dataloader = self._return_dataloader(train_dataset, num_workers, collate_fn, generator)
-        #val_dataloader = self._return_dataloader(val_dataset, num_workers, collate_fn, generator)
+        train_dataloader = self._return_dataloader(train_dataset, num_workers, collate_fn, generator, resumable_with_seed)
 
-        #  accelerator.prepare() dispatches batches to devices;
-        #  which means the length of dataloader calculated before, should consider the number of devices
+        # accelerator.prepare() dispatches batches to devices;
+        # which means the length of dataloader calculated before, should consider the number of devices
         warmup_steps = (
             self.num_warmup_updates * self.accelerator.num_processes
         )  # consider a fixed warmup steps while using accelerate multi-gpu ddp
         # otherwise by default with split_batches=False, warmup steps change with num_processes
-        print('len(train_dataloader): ', len(train_dataloader))
         total_steps = len(train_dataloader) * self.epochs / self.grad_accumulation_steps
         decay_steps = total_steps - warmup_steps
         warmup_scheduler = LinearLR(self.optimizer, start_factor=1e-8, end_factor=1.0, total_iters=warmup_steps)
@@ -392,7 +376,6 @@ class Trainer:
                     self.save_checkpoint(global_step)
 
                 if global_step % self.last_per_steps == 0:
-                    print('call at save_checkpoint')
                     self.save_checkpoint(global_step, last=True)
 
         self.save_checkpoint(global_step, last=True)

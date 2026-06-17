@@ -1,5 +1,4 @@
 import numpy as np
-from nnmnkwii.metrics import melcd
 from fastdtw import fastdtw
 from pymcd.mcd import Calculate_MCD
 from scipy.spatial.distance import euclidean
@@ -12,77 +11,6 @@ import itertools
 import re
 from num2words import num2words
 
-
-__MODEL_HASH = 'f0fe81560cb8b68660e564f55dd99207059c092e'
-
-
-def load_model(model_path, language, precision):
-
-    ### checking the model is present
-    model_bin_path = os.path.join(model_path, 'snapshots', __MODEL_HASH, 'model.bin')
-    model_bin_dir_path = os.path.dirname(model_bin_path)
-    if not os.path.isfile(model_bin_path):
-        raise Exception(f"[ERROR] Model file {model_bin_path} does not exist ! Please make sure the installation is correct.")   
-    ### end check
-
-    if language == 'auto':  # not used now but kept for future updates
-        language = None
-    
-    print(f"[INFO] Loading Faster-Whisper from {model_path} ...")
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    
-    model = WhisperModel(model_bin_dir_path, device=device, compute_type=precision)
-    print(f"[INFO] Faster-Whisper loaded!")
-    
-    return model
-
-
-def execute_asr_faster(input_wav_filepath, model, language, word_timestamps=False):
-    try:
-        segments, info = model.transcribe(
-            audio=input_wav_filepath,
-            beam_size=5,
-            vad_filter=True,
-            vad_parameters=dict(min_silence_duration_ms=700),
-            language=language,
-            word_timestamps=word_timestamps
-        )
-        text = ''
-
-        words = []
-        if word_timestamps:
-            for segment in segments:
-                for word_info in segment.words:
-                    words.append([word_info.word, word_info.start, word_info.end])
-        words = [
-            [word.strip().strip('-').strip('.').strip(',').strip(';').strip('!').strip('?').strip('`').strip('"').strip("'").strip(":"), float(start), float(end)]
-            for word, start, end in words
-        ]
-
-        if text == '':
-            for segment in segments:
-                text += segment.text
-    except:
-        return traceback.format_exc()
-    
-    if word_timestamps:
-        return words
-    else:
-        return text
-
-
-def get_mcd(mel1, mel2):
-    # mel1 = mel1.numpy()  # Shape: (X, 100)
-    # mel2 = mel2.numpy()  # Shape: (X, 100)
-
-    mcd_value = melcd(mel1, mel2)
-    return mcd_value
-
-def align_with_dtw(X, Y):
-    _, path = fastdtw(X, Y, dist=lambda x, y: np.linalg.norm(x - y))
-    aligned_X = np.array([X[i] for i, _ in path])
-    aligned_Y = np.array([Y[j] for _, j in path])
-    return aligned_X, aligned_Y
 
 class Calculate_MCD_from_ndarray(Calculate_MCD):
     def __init__(self, *args, **kwargs):
@@ -131,12 +59,6 @@ class Calculate_MCD_from_ndarray(Calculate_MCD):
 
         return mean_mcd
 
-def get_mcd_dtw(audio1, audio2, audios_sample_rate):
-    mcd_toolbox = Calculate_MCD_from_ndarray(MCD_mode="dtw")
-    mcd_value = mcd_toolbox.calculate_mcd(audio1, audio2, audios_sample_rate)
-
-    return mcd_value
-
 class WhisperModelAdapter():
     def __init__(self, faster_whisper_path, text_language, precision, device):
         self.__MODEL_HASH = 'f0fe81560cb8b68660e564f55dd99207059c092e'
@@ -181,7 +103,7 @@ class WhisperModelAdapter():
             if text == '':
                 for segment in segments:
                     text += segment.text
-        except:
+        except Exception:
             return traceback.format_exc()
         
         return text
